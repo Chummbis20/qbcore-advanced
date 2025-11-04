@@ -491,9 +491,8 @@ restart qb-smallresources
 
 ## Credits
 
-**Optimized By:** AI Assistant  
-**Framework:** QBCore Framework  
-**Documentation Reference:** QBCoreHowTo.md  
+**Optimized By:** Chumbis20  
+**Framework:** QBCore Framework   
 **Optimization Philosophy:** Safe, targeted, backward-compatible improvements
 
 ---
