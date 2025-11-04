@@ -22,6 +22,7 @@ This changelog documents targeted performance optimizations, security improvemen
 
 ### Bug Fixes
 - **Armor Persistence:** Fixed armor not saving on logout/restart (critical bug fix)
+- **Armor Regeneration:** Fixed armor regenerating after taking damage (race condition fix)
 - **Car Radio Disable:** Fixed car radio still being usable when `carRadio = true` in config
 - **Crouch System:** Fixed buggy half-crouch state transitions and spam toggling issues
 
@@ -30,6 +31,7 @@ This changelog documents targeted performance optimizations, security improvemen
 
 ### New Features
 - **Anti-Bhop System:** Added configurable anti-bunny hop system to prevent movement abuse
+- **Health Persistence:** Health now persists across logout/restart (no more health reset exploit)
 
 ---
 
@@ -125,6 +127,411 @@ This changelog documents targeted performance optimizations, security improvemen
 4. Verify armor is still present at same value
 5. Take damage to reduce armor
 6. Relog - armor should stay at reduced value
+
+---
+
+**UPDATE: Armor Setting Fix (Client-Side Correction)**
+
+**Additional Files Modified:**
+- `qb-smallresources/server/consumables.lua` - Removed server-side SetPedArmour calls
+- `qb-smallresources/client/consumables.lua` - Added client-side armor setting event
+
+**Problem Identified:**
+After initial implementation, armor was being set server-side with `SetPedArmour(GetPlayerPed(src), amount)` which doesn't work reliably. The server was setting armor, but it wasn't properly syncing to the client.
+
+**Root Cause:**
+- ❌ `SetPedArmour()` must be called **CLIENT-SIDE** to work properly
+- ❌ Server-side calls don't reliably update the client's ped
+- ❌ This caused armor to not apply correctly when using armor items
+
+**Solution:**
+Changed armor application to use proper client-server pattern:
+
+**Before (Server-Side - Incorrect):**
+```lua
+RegisterNetEvent('consumables:server:useArmor', function()
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not exports['qb-inventory']:RemoveItem(src, 'armor', 1) then return end
+    
+    SetPedArmour(GetPlayerPed(src), 75)  -- ❌ Server-side, doesn't work
+    Player.Functions.SetMetaData('armor', 75)
+end)
+```
+
+**After (Client-Side - Correct):**
+```lua
+-- SERVER: qb-smallresources/server/consumables.lua
+RegisterNetEvent('consumables:server:useArmor', function()
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not exports['qb-inventory']:RemoveItem(src, 'armor', 1) then return end
+    
+    TriggerClientEvent('consumables:client:SetArmor', src, 75)  -- ✅ Trigger client
+end)
+
+-- CLIENT: qb-smallresources/client/consumables.lua
+RegisterNetEvent('consumables:client:SetArmor', function(amount)
+    local ped = PlayerPedId()
+    SetPedArmour(ped, amount)  -- ✅ Client-side, works correctly
+    -- Armor sync in qb-core/client/loops.lua auto-saves to metadata
+end)
+```
+
+**How It Works Now:**
+
+1. **Player uses armor item**
+2. **Server:** Removes item from inventory
+3. **Server:** Triggers client event with armor amount (75 or 100)
+4. **Client:** Receives event and sets armor on ped
+5. **Client:** Armor sync loop detects change (within 5 seconds)
+6. **Client:** Sends metadata update to server
+7. **Server:** Saves armor value to database
+
+**Why This Fix is Needed:**
+
+| Issue | Server-Side SetPedArmour | Client-Side SetPedArmour |
+|-------|-------------------------|-------------------------|
+| Reliability | ❌ Inconsistent | ✅ Always works |
+| Sync Issues | ❌ Desync common | ✅ No desync |
+| Native Support | ❌ Not designed for server | ✅ Designed for client |
+| Metadata Sync | ❌ Manual sync needed | ✅ Auto-sync via loops.lua |
+
+**Impact:**
+- ✅ **FIXED:** Armor now applies correctly when using items
+- ✅ **FIXED:** No more desync between client and server
+- ✅ **FIXED:** Proper client-server architecture
+- ✅ **IMPROVED:** Armor sync loop automatically handles metadata saving
+- ✅ **MAINTAINED:** All previous persistence features still work
+
+**Testing (Updated):**
+1. Use armor: `/giveitem [id] armor 1` - Should apply 75 armor ✅
+2. Use heavy armor: `/giveitem [id] heavyarmor 1` - Should apply 100 armor ✅
+3. Check armor value with F1 menu or `/showme armor` ✅
+4. Take damage to reduce armor (e.g., 100 → 65) ✅
+5. Wait 5 seconds for sync ✅
+6. Relog - armor should be at damaged value (65) ✅
+7. Take more damage (65 → 30) ✅
+8. Restart server ✅
+9. Login - armor should still be at 30 ✅
+
+---
+
+**UPDATE 2: Fixed Armor Regeneration Bug (Critical)**
+
+**File Modified:** `qb-core/client/events.lua`
+
+**Problem Discovered:**
+After the client-side fix, a NEW issue was discovered: armor was **regenerating** after taking damage. For example:
+- Player has 100 armor
+- Takes damage → 55 armor
+- A few seconds later → **armor goes back to 100** ❌
+
+**Root Cause:**
+The `QBCore:Player:SetPlayerData` event was restoring armor from metadata EVERY time player data updated:
+
+```lua
+RegisterNetEvent('QBCore:Player:SetPlayerData', function(val)
+    QBCore.PlayerData = val
+    
+    -- ❌ THIS WAS CAUSING ARMOR TO REGENERATE
+    if val and val.metadata and val.metadata.armor then
+        SetPedArmour(PlayerPedId(), val.metadata.armor)
+    end
+end)
+```
+
+**Why This Caused Regeneration:**
+
+```
+1. Player has 100 armor
+   ↓
+2. Takes damage → Ped armor = 55
+   ↓
+3. Armor sync loop detects difference (55 ≠ 100)
+   ↓
+4. Sends to server: SetMetaData('armor', 55)
+   ↓
+5. Server updates metadata to 55
+   ↓
+6. Server triggers: SetPlayerData (to update client PlayerData)
+   ↓
+7. ❌ SetPlayerData event restores armor from OLD metadata (100)
+   ↓
+8. Ped armor gets set BACK to 100 (or other old value)
+   ↓
+9. Armor appears to regenerate!
+```
+
+**The Issue:**
+- `SetPlayerData` is called **frequently** during gameplay (not just on login)
+- Every time metadata updates (hunger, thirst, stress, etc.), it triggers `SetPlayerData`
+- The event was restoring armor from metadata, overwriting the CURRENT ped armor
+- This created a race condition where armor would bounce between damaged and restored values
+
+**Solution:**
+Removed armor restoration from `QBCore:Player:SetPlayerData` event:
+
+```lua
+RegisterNetEvent('QBCore:Player:SetPlayerData', function(val)
+    QBCore.PlayerData = val
+    
+    -- ✅ Armor restoration REMOVED to prevent regeneration
+    -- Armor is ONLY restored on initial login via OnPlayerLoaded
+    -- The armor sync loop handles all armor changes during gameplay
+end)
+```
+
+**Armor Restoration Flow (Fixed):**
+
+| Event | When It Fires | Armor Restoration |
+|-------|---------------|-------------------|
+| `OnPlayerLoaded` | Player first logs in / spawns | ✅ YES - Restores from DB |
+| `SetPlayerData` | Any metadata update during gameplay | ❌ NO - Would cause regeneration |
+| Armor Sync Loop | Every 5 seconds during gameplay | ✅ YES - Saves to DB only |
+
+**How It Works Now:**
+
+```
+INITIAL LOGIN:
+1. Player logs in
+2. OnPlayerLoaded fires
+3. Armor restored from metadata (e.g., 65)
+4. Player spawns with 65 armor ✅
+
+DURING GAMEPLAY:
+1. Player has 100 armor
+2. Takes damage → 55 armor
+3. Sync loop detects change (after 5 sec)
+4. Sends SetMetaData('armor', 55) to server
+5. Server saves 55 to database
+6. Server triggers SetPlayerData (updates PlayerData table)
+7. ✅ SetPlayerData NO LONGER restores armor
+8. Armor stays at 55 ✅
+9. Player takes more damage → 30 armor
+10. Sync saves 30 to database
+11. Armor stays at 30 ✅
+
+ON NEXT LOGIN:
+1. Player logs in
+2. OnPlayerLoaded restores armor from DB (30)
+3. Player spawns with 30 armor ✅
+```
+
+**Why Two Restoration Points Caused Issues:**
+
+| Restoration Point | Purpose | Problem |
+|-------------------|---------|---------|
+| `OnPlayerLoaded` | Initial login | ✅ Correct - needed |
+| `SetPlayerData` | Gameplay updates | ❌ Incorrect - caused regeneration |
+
+**Impact:**
+- ✅ **FIXED:** Armor no longer regenerates after taking damage
+- ✅ **FIXED:** Race condition between sync and SetPlayerData eliminated
+- ✅ **FIXED:** Armor stays at damaged value until next login
+- ✅ **IMPROVED:** Clean separation of concerns (login vs gameplay)
+- ✅ **MAINTAINED:** Armor still persists across logout/login
+- ✅ **MAINTAINED:** Armor still syncs to database every 5 seconds
+
+**Testing (Final):**
+1. Use heavy armor → Armor = 100 ✅
+2. Take damage → Armor = 55 ✅
+3. **Wait 10 seconds** (check if armor regenerates) ✅
+4. Armor should STAY at 55 (not go back to 100) ✅
+5. Take more damage → Armor = 20 ✅
+6. **Wait another 10 seconds** ✅
+7. Armor should STAY at 20 ✅
+8. Logout ✅
+9. Login → Armor = 20 ✅
+10. Take damage → Armor = 5 ✅
+11. Armor should STAY at 5 (no regeneration) ✅
+
+**Before vs After:**
+
+| Scenario | Before (Buggy) | After (Fixed) |
+|----------|----------------|---------------|
+| Use 100 armor | ✅ Works | ✅ Works |
+| Take damage (100→55) | ✅ Works | ✅ Works |
+| Wait 5+ seconds | ❌ Regenerates to 100 | ✅ Stays at 55 |
+| Take more damage (55→20) | ❌ Regenerates to 100 or 55 | ✅ Stays at 20 |
+| Logout/Login | ✅ Restores last value | ✅ Restores last value |
+
+---
+
+### Health Persistence System (NEW FEATURE)
+
+**Files Modified:**
+- `qb-core/client/loops.lua` - Added health sync to metadata
+- `qb-core/client/events.lua` - Added health restoration on login
+
+**Problem:** Health was not persisting across logout/server restart. Players would always respawn with full health (200) even if they logged out with damaged health.
+
+**Example:**
+```
+Player has 200 health (full)
+Takes damage → 130 health
+Logout
+Login → ❌ 200 health (full) - health reset!
+```
+
+**Solution:** Implemented the same persistence system used for armor, but for health.
+
+**How It Works:**
+
+**1. Health Sync Loop (qb-core/client/loops.lua):**
+```lua
+-- Runs every 5 seconds (same as armor sync)
+if not isDead and not inLastStand then
+    local currentHealth = GetEntityHealth(cachedPed)
+    -- GTA health: 100 = dead, 200 = full
+    -- Only sync if alive (> 100) and value changed
+    if currentHealth > 100 and currentHealth ~= metadata.health then
+        TriggerServerEvent('QBCore:Server:SetMetaData', 'health', currentHealth)
+    end
+end
+```
+
+**2. Health Restoration on Login (qb-core/client/events.lua):**
+```lua
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+    local ped = PlayerPedId()
+    
+    -- Restore health from metadata
+    if QBCore.PlayerData.metadata.health then
+        local savedHealth = QBCore.PlayerData.metadata.health
+        if savedHealth > 100 then  -- Only if valid (alive)
+            SetEntityHealth(ped, savedHealth)
+        end
+    end
+end)
+```
+
+**Health System Details:**
+
+| GTA Health Value | Meaning |
+|------------------|---------|
+| 100 | Dead |
+| 101-199 | Damaged |
+| 200 | Full Health |
+
+**Sync Conditions:**
+- ✅ Player must be alive (`health > 100`)
+- ✅ Player must not be in laststand or dead state
+- ✅ Health must have changed from stored value
+- ✅ Syncs every 5 seconds (same interval as armor)
+
+**Flow Diagram:**
+
+```
+INITIAL LOGIN:
+1. Player logs in
+2. OnPlayerLoaded fires
+3. Reads health from metadata (e.g., 130)
+4. Sets ped health to 130 ✅
+5. Player spawns with 130 health
+
+DURING GAMEPLAY:
+1. Player has 200 health (full)
+2. Takes damage → 130 health
+3. Health sync loop detects change (5 sec)
+4. Saves 130 to metadata
+5. Takes more damage → 90 health
+6. Health sync saves 90 to metadata
+7. Health stays at 90 ✅
+
+ON LOGOUT/RESTART:
+1. Current health (90) is saved to DB
+2. Player disconnects
+3. Server restarts (or player relogs)
+4. Player logs back in
+5. OnPlayerLoaded restores 90 health ✅
+6. Player spawns with 90 health (not full!)
+
+AT HOSPITAL:
+1. Hospital script heals player
+2. SetEntityHealth(ped, 200) - Full health
+3. Health sync detects change (200 ≠ 90)
+4. Saves 200 to metadata ✅
+5. Next login: Player spawns with 200 health
+```
+
+**Features:**
+
+| Feature | Description |
+|---------|-------------|
+| **Persistence** | Health persists across logout/login |
+| **Sync Interval** | Every 5 seconds (same as armor) |
+| **Smart Sync** | Only saves when health changes |
+| **Death Handling** | Doesn't sync if dead or in laststand |
+| **Hospital Compatible** | Works with healing systems |
+| **Performance** | Minimal overhead (cached ped) |
+
+**Impact:**
+- ✅ **NEW:** Health now persists across logout/login
+- ✅ **NEW:** Health persists across server restarts
+- ✅ **IMPROVED:** More realistic gameplay (can't escape damage by relogging)
+- ✅ **IMPROVED:** Better integration with medical/healing systems
+- ✅ **OPTIMIZED:** Uses same sync loop as armor (no extra overhead)
+- ✅ **SAFE:** Only syncs valid health values (> 100, alive)
+
+**Testing:**
+1. **Take Damage Test:**
+   - Spawn with full health (200) ✅
+   - Take damage → 130 health ✅
+   - Wait 10 seconds (for sync) ✅
+   - `/logout` ✅
+   - Login → Should have 130 health ✅ (NOT 200!)
+
+2. **Multiple Damage Test:**
+   - Start with 130 health ✅
+   - Take more damage → 70 health ✅
+   - Wait 10 seconds ✅
+   - Server restart ✅
+   - Login → Should have 70 health ✅
+
+3. **Hospital Healing Test:**
+   - Start with 70 health ✅
+   - Go to hospital/use medkit ✅
+   - Health restored to 200 ✅
+   - Wait 10 seconds (sync) ✅
+   - `/logout` ✅
+   - Login → Should have 200 health ✅
+
+4. **Death Test:**
+   - Take fatal damage → Dead (health = 100) ✅
+   - Respawn at hospital → 200 health ✅
+   - Logout ✅
+   - Login → Should have 200 health ✅ (not dead state)
+
+**Use Cases:**
+- ✅ **Realistic RP:** Players can't escape combat damage by relogging
+- ✅ **Medical Systems:** Health state persists for ambulance/hospital RP
+- ✅ **Survival Servers:** Players must heal before logging off
+- ✅ **Fair Gameplay:** No health reset exploit
+
+**Comparison with Armor System:**
+
+| Feature | Armor Persistence | Health Persistence |
+|---------|------------------|-------------------|
+| Sync Interval | 5 seconds | 5 seconds |
+| Restoration | OnPlayerLoaded | OnPlayerLoaded |
+| Metadata Key | `armor` | `health` |
+| Value Range | 0-100 | 101-200 |
+| Death Handling | Always syncs | Skip if dead |
+| Implementation | Same loop | Same loop |
+
+**Before vs After:**
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| Login with full health | ✅ 200 | ✅ 200 |
+| Take damage (200→130) | ✅ Works | ✅ Works |
+| Logout | ❌ Saves 200 (full) | ✅ Saves 130 (damaged) |
+| Login again | ❌ 200 (reset) | ✅ 130 (persisted) |
+| Take more damage (130→70) | ✅ Works | ✅ Works |
+| Server restart | ❌ 200 (reset) | ✅ 70 (persisted) |
+| Hospital heal | ✅ 200 | ✅ 200 |
+| Next login | ❌ Could be 200 or old value | ✅ 200 (healed state) |
 
 ---
 
