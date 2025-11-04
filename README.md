@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![QBCore](https://raw.githubusercontent.com/qbcore-framework/qb-core/main/qbcore.png)
+![QBCore]([https://raw.githubusercontent.com/qbcore-framework/qb-core/main/qbcore.png](https://avatars.githubusercontent.com/u/81791099?s=280&v=4))
 
 **A fully optimized QBCore framework installation with performance enhancements and comprehensive documentation.**
 
@@ -16,20 +16,7 @@
 ---
 
 ## 📋 Table of Contents
-
-- [About This Build](#about-this-build)
-- [Key Features](#key-features)
-- [Optimization Status](#optimization-status)
-- [Installation](#installation)
-- [Server Configuration](#server-configuration)
-- [Performance Improvements](#performance-improvements)
-- [Documentation](#documentation)
-- [Resource Structure](#resource-structure)
-- [Testing & Validation](#testing--validation)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [Support](#support)
-- [License](#license)
+None Yet
 
 ---
 
