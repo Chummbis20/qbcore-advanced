@@ -219,18 +219,17 @@ Comprehensive documentation is available in the `/Logs` directory:
 
 | Document | Description |
 |----------|-------------|
-| **[COMPLETE_OPTIMIZATION_REPORT.md](Logs/COMPLETE_OPTIMIZATION_REPORT.md)** | Full optimization details with file-by-file breakdown |
-| **[QBCoreHowTo.md](Logs/QBCoreHowTo.md)** | Official QBCore development guide (4,472 lines) |
-| **[TESTING_GUIDE.md](Logs/TESTING_GUIDE.md)** | Testing procedures and validation |
-| **[CHANGELOG.md](Logs/CHANGELOG.md)** | Complete change history |
+| **[COMPLETE_OPTIMIZATION_REPORT.md](COMPLETE_OPTIMIZATION_REPORT.md)** | Full optimization details with file-by-file breakdown |
+| **[TESTING_GUIDE.md](TESTING_GUIDE.md)** | Testing procedures and validation |
+| **[CHANGELOG.md](CHANGELOG.md)** | Complete change history |
 
 ### Quick Reference
 
 | Document | Description |
 |----------|-------------|
-| **[QUICK_REFERENCE.md](Logs/QUICK_REFERENCE.md)** | Quick optimization lookup |
-| **[DOCUMENTATION_INDEX.md](Logs/DOCUMENTATION_INDEX.md)** | Index of all documentation |
-| **[OPTIMIZATION_ANALYSIS.md](Logs/OPTIMIZATION_ANALYSIS.md)** | Technical analysis of optimizations |
+| **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** | Quick optimization lookup |
+| **[DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)** | Index of all documentation |
+| **[OPTIMIZATION_ANALYSIS.md](OPTIMIZATION_ANALYSIS.md)** | Technical analysis of optimizations |
 
 ---
 
