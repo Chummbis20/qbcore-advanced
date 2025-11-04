@@ -363,7 +363,7 @@ Verify: Database tables exist (apartments, players)
 
 ### Getting Help
 
-1. Check documentation in `/Logs` directory
+1. Check documentation in directory
 2. Review `TESTING_GUIDE.md` for validation steps
 3. Check QBCore official documentation
 4. Join QBCore Discord: https://discord.gg/qbcore
@@ -376,11 +376,10 @@ Verify: Database tables exist (apartments, players)
 
 If you want to contribute additional optimizations:
 
-1. **Read First**: Check `Logs/QBCoreHowTo.md` for best practices
-2. **Scope**: Only modify qb-core and qb-smallresources
-3. **Test Thoroughly**: Validate all functionality still works
-4. **Document**: Update relevant documentation files
-5. **No Breaking Changes**: Maintain backward compatibility
+1. **Scope**: Only modify qb-core and qb-smallresources
+2. **Test Thoroughly**: Validate all functionality still works
+3. **Document**: Update relevant documentation files
+4. **No Breaking Changes**: Maintain backward compatibility
 
 ### Code Standards
 
@@ -429,10 +428,10 @@ Wait(0)  -- Too frequent!
 
 ### This Build
 
-- **Documentation**: See `/Logs` directory
-- **Optimization Details**: `Logs/COMPLETE_OPTIMIZATION_REPORT.md`
-- **Testing Guide**: `Logs/TESTING_GUIDE.md`
-- **Change History**: `Logs/CHANGELOG.md`
+- **Documentation**: See directory
+- **Optimization Details**: `COMPLETE_OPTIMIZATION_REPORT.md`
+- **Testing Guide**: `TESTING_GUIDE.md`
+- **Change History**: `CHANGELOG.md`
 
 ---
 
